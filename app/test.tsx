@@ -25,10 +25,12 @@ export default function App() {
   const [scanned, setScanned] = useState<boolean>(false);
   const [scannedList, setScannedList] = useState<string[]>([]);
 
-  // State untuk form edit
+  // State untuk form edit / input manual
   const [isEditModalVisible, setEditModalVisible] = useState<boolean>(false);
   const [selectedItemToEdit, setSelectedItemToEdit] = useState<string | null>(null);
+  const [isManualInput, setIsManualInput] = useState<boolean>(false); // Penanda apakah sedang input manual atau edit
 
+  const [idKacaManual, setIdKacaManual] = useState('');
   const [typeKaca, setTypeKaca] = useState('');
   const [tebalKaca, setTebalKaca] = useState('');
   const [lebarKaca, setLebarKaca] = useState('');
@@ -68,11 +70,12 @@ export default function App() {
     try {
       const currentDate = new Date().toLocaleDateString('id-ID');
 
-      // Memecah data list agar masuk ke kolom masing-masing
+      // Memecah data list agar masuk ke kolom masing-masing termasuk kolom id
       const payload = scannedList.map(item => {
         let rowData = {
           tanggal: currentDate,
-          type_kaca: item, // Default: jika data QR belum diedit, masukkan teks raw-nya ke sini
+          id_kaca: '',
+          type_kaca: item,
           tebal_kaca: '',
           ukuran_kaca: '',
           jenis_kemasan: '',
@@ -80,16 +83,21 @@ export default function App() {
           isi_per_packaging: ''
         };
 
-        // Deteksi apakah item sudah melewati form edit (mengandung kata "Type:" dan "Tebal:")
-        if (item.includes("Type:") && item.includes("Tebal:")) {
+        // Deteksi apakah item sudah melewati form edit/manual
+        if (item.includes("ID:") && item.includes("Type:")) {
           const parts = item.split(' | ');
 
-          rowData.type_kaca = parts[0]?.replace('Type: ', '') || '';
-          rowData.tebal_kaca = parts[1]?.replace('Tebal: ', '') || '';
-          rowData.ukuran_kaca = parts[2]?.replace('Ukuran: ', '') || '';
-          rowData.jenis_kemasan = parts[3]?.replace('Kemasan: ', '') || '';
-          rowData.at_isi = parts[4]?.replace('@isi: ', '') || '';
-          rowData.isi_per_packaging = parts[5]?.replace('Pack: ', '') || '';
+          rowData.id_kaca = parts[0]?.replace('ID: ', '') || '';
+          rowData.type_kaca = parts[1]?.replace('Type: ', '') || '';
+          rowData.tebal_kaca = parts[2]?.replace('Tebal: ', '') || '';
+          rowData.ukuran_kaca = parts[3]?.replace('Ukuran: ', '') || '';
+          rowData.jenis_kemasan = parts[4]?.replace('Kemasan: ', '') || '';
+          rowData.at_isi = parts[5]?.replace('@isi: ', '') || '';
+          rowData.isi_per_packaging = parts[6]?.replace('Pack: ', '') || '';
+        } else {
+          // Jika dari scan murni dan belum diedit
+          rowData.id_kaca = item;
+          rowData.type_kaca = '-';
         }
 
         return rowData;
@@ -109,8 +117,6 @@ export default function App() {
 
       if (response.ok) {
         Alert.alert("Berhasil", "Data berhasil disinkronkan ke Google Sheet!");
-        // Opsional: Batalkan komentar di bawah jika ingin list di HP otomatis kosong setelah sukses terkirim
-        // setScannedList([]); 
       } else {
         const errorData = await response.json();
         Alert.alert("Gagal", "Gagal mengirim data ke server.");
@@ -129,7 +135,7 @@ export default function App() {
     }
 
     try {
-      let csvString = "No,Hasil Scan QR\n";
+      let csvString = "No,Hasil Scan/Input QR (ID)\n";
       scannedList.forEach((item, index) => {
         csvString += `${index + 1},"${item}"\n`;
       });
@@ -159,7 +165,9 @@ export default function App() {
     if (scanned) return;
     setScanned(true);
 
-    const isAlreadyScanned = scannedList.includes(data);
+    console.log("Hasil Scan QR:", data);
+
+    const isAlreadyScanned = scannedList.some(item => item.includes(data));
 
     if (isAlreadyScanned) {
       Alert.alert(
@@ -207,20 +215,58 @@ export default function App() {
     );
   };
 
-  const openEditForm = (item: string) => {
-    setSelectedItemToEdit(item);
+  const openManualInputForm = () => {
+    setIsManualInput(true);
+    setSelectedItemToEdit(null);
+    setIdKacaManual('');
+    setTypeKaca('');
+    setTebalKaca('');
+    setLebarKaca('');
+    setTinggiKaca('');
+    setJenisKemasan('BB');
+    setAtIsi('');
+    setIsiPerPackaging('');
     setEditModalVisible(true);
   };
 
-  const simpanEdit = () => {
-    const hasilEdit = `Type: ${typeKaca} | Tebal: ${tebalKaca} | Ukuran: ${lebarKaca}x${tinggiKaca} | Kemasan: ${jenisKemasan} | @isi: ${atIsi} | Pack: ${isiPerPackaging}`;
+  const openEditForm = (item: string) => {
+    setIsManualInput(false);
+    setSelectedItemToEdit(item);
 
-    setScannedList((prevList) =>
-      prevList.map((item) => (item === selectedItemToEdit ? hasilEdit : item))
-    );
+    // Jika item sudah berformat detail, parse kembali nilainya ke form jika diperlukan
+    setEditModalVisible(true);
+  };
+
+  const simpanData = () => {
+    if (isManualInput) {
+      // Validasi sederhana untuk input manual
+      if (!idKacaManual.trim()) {
+        Alert.alert("Peringatan", "ID Kaca tidak boleh kosong!");
+        return;
+      }
+
+      const hasilManual = `ID: ${idKacaManual} | Type: ${typeKaca} | Tebal: ${tebalKaca} | Ukuran: ${lebarKaca}x${tinggiKaca} | Kemasan: ${jenisKemasan} | @isi: ${atIsi} | Pack: ${isiPerPackaging}`;
+
+      setScannedList((prevList) => [...prevList, hasilManual]);
+    } else {
+      // Proses Edit Item yang sudah ada
+      let idKaca = selectedItemToEdit;
+      if (selectedItemToEdit && selectedItemToEdit.includes("ID:")) {
+        const parts = selectedItemToEdit.split(' | ');
+        idKaca = parts[0]?.replace('ID: ', '') || selectedItemToEdit;
+      }
+
+      const hasilEdit = `ID: ${idKaca} | Type: ${typeKaca} | Tebal: ${tebalKaca} | Ukuran: ${lebarKaca}x${tinggiKaca} | Kemasan: ${jenisKemasan} | @isi: ${atIsi} | Pack: ${isiPerPackaging}`;
+
+      setScannedList((prevList) =>
+        prevList.map((item) => (item === selectedItemToEdit ? hasilEdit : item))
+      );
+    }
 
     setEditModalVisible(false);
 
+    // Reset Form State
+    setIdKacaManual('');
     setTypeKaca('');
     setTebalKaca('');
     setLebarKaca('');
@@ -236,6 +282,7 @@ export default function App() {
         <CameraView
           onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          zoom={0.2} // Angka zoom (0 sampai 1). Sesuaikan kebutuhan agar objek kecil lebih dekat
           style={StyleSheet.absoluteFill}
         >
           <View style={styles.overlayContainer}>
@@ -253,11 +300,11 @@ export default function App() {
       </View>
 
       <View style={[styles.listContainer, { paddingBottom: 45 }]}>
-        <Text style={styles.title}>Daftar Hasil Scan QR:</Text>
+        <Text style={styles.title}>Daftar Hasil Scan / Input QR:</Text>
         <Text style={styles.dateText}>{currentDateUI}</Text>
 
         {scannedList.length === 0 ? (
-          <Text style={styles.emptyText}>Belum ada data yang di-scan.</Text>
+          <Text style={styles.emptyText}>Belum ada data yang di-scan atau diinput.</Text>
         ) : (
           <FlatList
             data={scannedList}
@@ -292,6 +339,11 @@ export default function App() {
 
       {/* Kumpulan Floating Action Buttons (FAB) */}
       <View style={styles.fabContainer}>
+        {/* Tombol Tambah Manual */}
+        <TouchableOpacity style={[styles.fab, { backgroundColor: '#ffc107', marginRight: 15 }]} onPress={openManualInputForm}>
+          <MaterialCommunityIcons name="plus" size={28} color="#333" />
+        </TouchableOpacity>
+
         {/* Tombol Sinkronisasi Google Sheets */}
         <TouchableOpacity style={[styles.fab, { backgroundColor: '#4285F4', marginRight: 15 }]} onPress={syncToGoogleSheet}>
           <MaterialCommunityIcons name="cloud-upload" size={28} color="white" />
@@ -303,11 +355,21 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* Modal Form Edit */}
+      {/* Modal Form Input / Edit */}
       <Modal visible={isEditModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.formContainer}>
-            <Text style={styles.formTitle}>Edit Data Kaca</Text>
+            <Text style={styles.formTitle}>
+              {isManualInput ? "Input Manual Data Kaca" : "Edit Data Kaca"}
+            </Text>
+
+            {/* Kolom ID Kaca hanya wajib/tampil jika input manual */}
+            {isManualInput && (
+              <>
+                <Text style={styles.label}>ID Kaca</Text>
+                <TextInput style={styles.input} value={idKacaManual} onChangeText={setIdKacaManual} placeholder="Contoh: 21100BEGAS00087" />
+              </>
+            )}
 
             <Text style={styles.label}>Type Kaca</Text>
             <TextInput style={styles.input} value={typeKaca} onChangeText={setTypeKaca} />
@@ -328,16 +390,18 @@ export default function App() {
             </View>
 
             <Text style={styles.label}>Jenis Kemasan</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={jenisKemasan}
-                onValueChange={(itemValue) => setJenisKemasan(itemValue)}
-              >
-                <Picker.Item label="BB" value="BB" />
-                <Picker.Item label="Peti" value="Peti" />
-                <Picker.Item label="LEMBAR" value="LEMBAR" />
-              </Picker>
-            </View>
+            <div style={{ width: '100%' }}>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={jenisKemasan}
+                  onValueChange={(itemValue) => setJenisKemasan(itemValue)}
+                >
+                  <Picker.Item label="BB" value="BB" />
+                  <Picker.Item label="Peti" value="Peti" />
+                  <Picker.Item label="LEMBAR" value="LEMBAR" />
+                </Picker>
+              </View>
+            </div>
 
             <Text style={styles.label}>@isi</Text>
             <TextInput style={styles.input} value={atIsi} onChangeText={setAtIsi} keyboardType="numeric" />
@@ -347,7 +411,7 @@ export default function App() {
 
             <View style={styles.modalButtons}>
               <Button title="Batal" color="#dc3545" onPress={() => setEditModalVisible(false)} />
-              <Button title="Simpan" color="#28a745" onPress={simpanEdit} />
+              <Button title="Simpan" color="#28a745" onPress={simpanData} />
             </View>
           </View>
         </View>
