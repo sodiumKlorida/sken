@@ -10,6 +10,7 @@ import {
   Dimensions,
   FlatList,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -24,11 +25,12 @@ export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<boolean>(false);
   const [scannedList, setScannedList] = useState<string[]>([]);
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false); // State untuk senter
 
   // State untuk form edit / input manual
   const [isEditModalVisible, setEditModalVisible] = useState<boolean>(false);
   const [selectedItemToEdit, setSelectedItemToEdit] = useState<string | null>(null);
-  const [isManualInput, setIsManualInput] = useState<boolean>(false); // Penanda apakah sedang input manual atau edit
+  const [isManualInput, setIsManualInput] = useState<boolean>(false);
 
   const [idKacaManual, setIdKacaManual] = useState('');
   const [typeKaca, setTypeKaca] = useState('');
@@ -63,19 +65,22 @@ export default function App() {
 
   const syncToGoogleSheet = async () => {
     if (scannedList.length === 0) {
-      Alert.alert("Data Kosong", "Tidak ada data untuk disinkronkan.");
+      if (Platform.OS === 'web') {
+        window.alert("Tidak ada data untuk disinkronkan.");
+      } else {
+        Alert.alert("Data Kosong", "Tidak ada data untuk disinkronkan.");
+      }
       return;
     }
 
     try {
       const currentDate = new Date().toLocaleDateString('id-ID');
 
-      // Memecah data list agar masuk ke kolom masing-masing termasuk kolom id
       const payload = scannedList.map(item => {
         let rowData = {
           tanggal: currentDate,
-          id_kaca: '',
-          type_kaca: item,
+          id_kaca: '', 
+          type_kaca: item, 
           tebal_kaca: '',
           ukuran_kaca: '',
           jenis_kemasan: '',
@@ -83,7 +88,6 @@ export default function App() {
           isi_per_packaging: ''
         };
 
-        // Deteksi apakah item sudah melewati form edit/manual
         if (item.includes("ID:") && item.includes("Type:")) {
           const parts = item.split(' | ');
 
@@ -95,7 +99,6 @@ export default function App() {
           rowData.at_isi = parts[5]?.replace('@isi: ', '') || '';
           rowData.isi_per_packaging = parts[6]?.replace('Pack: ', '') || '';
         } else {
-          // Jika dari scan murni dan belum diedit
           rowData.id_kaca = item;
           rowData.type_kaca = '-';
         }
@@ -103,7 +106,6 @@ export default function App() {
         return rowData;
       });
 
-      // Menggunakan URL API SheetDB Anda
       const scriptUrl = 'https://sheetdb.io/api/v1/u4ktxxamuzgr1';
 
       const response = await fetch(scriptUrl, {
@@ -116,21 +118,37 @@ export default function App() {
       });
 
       if (response.ok) {
-        Alert.alert("Berhasil", "Data berhasil disinkronkan ke Google Sheet!");
+        if (Platform.OS === 'web') {
+          window.alert("Data berhasil disinkronkan ke Google Sheet!");
+        } else {
+          Alert.alert("Berhasil", "Data berhasil disinkronkan ke Google Sheet!");
+        }
       } else {
         const errorData = await response.json();
-        Alert.alert("Gagal", "Gagal mengirim data ke server.");
+        if (Platform.OS === 'web') {
+          window.alert("Gagal mengirim data ke server.");
+        } else {
+          Alert.alert("Gagal", "Gagal mengirim data ke server.");
+        }
         console.log("Respon Gagal:", errorData);
       }
     } catch (error) {
-      Alert.alert("Error Jaringan", String(error));
+      if (Platform.OS === 'web') {
+        window.alert("Error Jaringan: " + String(error));
+      } else {
+        Alert.alert("Error Jaringan", String(error));
+      }
       console.error(error);
     }
   };
 
   const exportToExcel = async () => {
     if (scannedList.length === 0) {
-      Alert.alert("Data Kosong", "Belum ada data QR untuk diekspor.");
+      if (Platform.OS === 'web') {
+        window.alert("Belum ada data QR untuk diekspor.");
+      } else {
+        Alert.alert("Data Kosong", "Belum ada data QR untuk diekspor.");
+      }
       return;
     }
 
@@ -153,10 +171,18 @@ export default function App() {
           dialogTitle: 'Simpan/Bagikan Data Scan',
         });
       } else {
-        Alert.alert("Gagal", "Fitur berbagi tidak tersedia di perangkat ini.");
+        if (Platform.OS === 'web') {
+          window.alert("Fitur berbagi tidak tersedia di perangkat ini.");
+        } else {
+          Alert.alert("Gagal", "Fitur berbagi tidak tersedia di perangkat ini.");
+        }
       }
     } catch (error) {
-      Alert.alert("Error", "Gagal mengekspor data.");
+      if (Platform.OS === 'web') {
+        window.alert("Gagal mengekspor data.");
+      } else {
+        Alert.alert("Error", "Gagal mengekspor data.");
+      }
       console.error(error);
     }
   };
@@ -170,26 +196,36 @@ export default function App() {
     const isAlreadyScanned = scannedList.some(item => item.includes(data));
 
     if (isAlreadyScanned) {
-      Alert.alert(
-        "QR Sudah Ada",
-        `Data "${data}" sudah ada dalam daftar. Yakin untuk menambahkan lagi?`,
-        [
-          {
-            text: "Tidak",
-            style: "cancel",
-            onPress: () => {
-              setTimeout(() => setScanned(false), 1000);
+      const confirmMessage = `Data "${data}" sudah ada dalam daftar. Yakin untuk menambahkan lagi?`;
+      
+      if (Platform.OS === 'web') {
+        const userConfirmed = window.confirm(confirmMessage);
+        if (userConfirmed) {
+          setScannedList((prevList) => [...prevList, data]);
+        }
+        setTimeout(() => setScanned(false), 1000);
+      } else {
+        Alert.alert(
+          "QR Sudah Ada",
+          confirmMessage,
+          [
+            {
+              text: "Tidak",
+              style: "cancel",
+              onPress: () => {
+                setTimeout(() => setScanned(false), 1000);
+              },
             },
-          },
-          {
-            text: "Ya",
-            onPress: () => {
-              setScannedList((prevList) => [...prevList, data]);
-              setTimeout(() => setScanned(false), 1000);
+            {
+              text: "Ya",
+              onPress: () => {
+                setScannedList((prevList) => [...prevList, data]);
+                setTimeout(() => setScanned(false), 1000);
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      }
     } else {
       setScannedList((prevList) => [...prevList, data]);
       setTimeout(() => setScanned(false), 1000);
@@ -197,22 +233,30 @@ export default function App() {
   };
 
   const removeItem = (itemToRemove: string) => {
-    Alert.alert(
-      "Hapus Item",
-      `Yakin ingin menghapus data "${itemToRemove}" dari daftar?`,
-      [
-        { text: "Batal", style: "cancel" },
-        {
-          text: "Hapus",
-          style: "destructive",
-          onPress: () => {
-            setScannedList((prevList) =>
-              prevList.filter((item) => item !== itemToRemove)
-            );
+    const confirmDelete = `Yakin ingin menghapus data "${itemToRemove}" dari daftar?`;
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmDelete)) {
+        setScannedList((prevList) => prevList.filter((item) => item !== itemToRemove));
+      }
+    } else {
+      Alert.alert(
+        "Hapus Item",
+        confirmDelete,
+        [
+          { text: "Batal", style: "cancel" },
+          {
+            text: "Hapus",
+            style: "destructive",
+            onPress: () => {
+              setScannedList((prevList) =>
+                prevList.filter((item) => item !== itemToRemove)
+              );
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const openManualInputForm = () => {
@@ -232,24 +276,24 @@ export default function App() {
   const openEditForm = (item: string) => {
     setIsManualInput(false);
     setSelectedItemToEdit(item);
-
-    // Jika item sudah berformat detail, parse kembali nilainya ke form jika diperlukan
     setEditModalVisible(true);
   };
 
   const simpanData = () => {
     if (isManualInput) {
-      // Validasi sederhana untuk input manual
       if (!idKacaManual.trim()) {
-        Alert.alert("Peringatan", "ID Kaca tidak boleh kosong!");
+        if (Platform.OS === 'web') {
+          window.alert("ID Kaca tidak boleh kosong!");
+        } else {
+          Alert.alert("Peringatan", "ID Kaca tidak boleh kosong!");
+        }
         return;
       }
 
       const hasilManual = `ID: ${idKacaManual} | Type: ${typeKaca} | Tebal: ${tebalKaca} | Ukuran: ${lebarKaca}x${tinggiKaca} | Kemasan: ${jenisKemasan} | @isi: ${atIsi} | Pack: ${isiPerPackaging}`;
-
+      
       setScannedList((prevList) => [...prevList, hasilManual]);
     } else {
-      // Proses Edit Item yang sudah ada
       let idKaca = selectedItemToEdit;
       if (selectedItemToEdit && selectedItemToEdit.includes("ID:")) {
         const parts = selectedItemToEdit.split(' | ');
@@ -265,7 +309,6 @@ export default function App() {
 
     setEditModalVisible(false);
 
-    // Reset Form State
     setIdKacaManual('');
     setTypeKaca('');
     setTebalKaca('');
@@ -282,9 +325,22 @@ export default function App() {
         <CameraView
           onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-          zoom={0.2} // Angka zoom (0 sampai 1). Sesuaikan kebutuhan agar objek kecil lebih dekat
+          zoom={0} // Zoom diatur ke 0 (normal) agar gambar tidak blur parah
+          enableTorch={isTorchOn} // Mendukung lampu senter jika dibutuhkan
           style={StyleSheet.absoluteFill}
         >
+          {/* Tombol Toggle Senter di dalam area kamera */}
+          <TouchableOpacity 
+            style={styles.torchButton} 
+            onPress={() => setIsTorchOn(!isTorchOn)}
+          >
+            <MaterialCommunityIcons 
+              name={isTorchOn ? "flash" : "flash-off"} 
+              size={24} 
+              color={isTorchOn ? "#FFD700" : "white"} 
+            />
+          </TouchableOpacity>
+
           <View style={styles.overlayContainer}>
             <View style={styles.viewfinder}>
               <View style={[styles.corner, styles.topLeft]} />
@@ -339,17 +395,14 @@ export default function App() {
 
       {/* Kumpulan Floating Action Buttons (FAB) */}
       <View style={styles.fabContainer}>
-        {/* Tombol Tambah Manual */}
         <TouchableOpacity style={[styles.fab, { backgroundColor: '#ffc107', marginRight: 15 }]} onPress={openManualInputForm}>
           <MaterialCommunityIcons name="plus" size={28} color="#333" />
         </TouchableOpacity>
 
-        {/* Tombol Sinkronisasi Google Sheets */}
         <TouchableOpacity style={[styles.fab, { backgroundColor: '#4285F4', marginRight: 15 }]} onPress={syncToGoogleSheet}>
           <MaterialCommunityIcons name="cloud-upload" size={28} color="white" />
         </TouchableOpacity>
 
-        {/* Tombol Ekspor Excel/CSV Manual */}
         <TouchableOpacity style={styles.fab} onPress={exportToExcel}>
           <MaterialCommunityIcons name="file-excel" size={28} color="white" />
         </TouchableOpacity>
@@ -363,7 +416,6 @@ export default function App() {
               {isManualInput ? "Input Manual Data Kaca" : "Edit Data Kaca"}
             </Text>
 
-            {/* Kolom ID Kaca hanya wajib/tampil jika input manual */}
             {isManualInput && (
               <>
                 <Text style={styles.label}>ID Kaca</Text>
@@ -390,18 +442,16 @@ export default function App() {
             </View>
 
             <Text style={styles.label}>Jenis Kemasan</Text>
-            <div style={{ width: '100%' }}>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={jenisKemasan}
-                  onValueChange={(itemValue) => setJenisKemasan(itemValue)}
-                >
-                  <Picker.Item label="BB" value="BB" />
-                  <Picker.Item label="Peti" value="Peti" />
-                  <Picker.Item label="LEMBAR" value="LEMBAR" />
-                </Picker>
-              </View>
-            </div>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={jenisKemasan}
+                onValueChange={(itemValue) => setJenisKemasan(itemValue)}
+              >
+                <Picker.Item label="BB" value="BB" />
+                <Picker.Item label="Peti" value="Peti" />
+                <Picker.Item label="LEMBAR" value="LEMBAR" />
+              </Picker>
+            </View>
 
             <Text style={styles.label}>@isi</Text>
             <TextInput style={styles.input} value={atIsi} onChangeText={setAtIsi} keyboardType="numeric" />
@@ -423,6 +473,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   cameraContainer: { flex: 1.2, position: 'relative' },
+  torchButton: { position: 'absolute', top: 20, right: 20, zIndex: 20, backgroundColor: 'rgba(0,0,0,0.5)', padding: 10, borderRadius: 30 },
   overlayContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   viewfinder: { width: viewfinderSize, height: viewfinderSize, borderWidth: 2, borderColor: 'transparent', backgroundColor: 'transparent', position: 'relative' },
   corner: { position: 'absolute', width: 25, height: 25, borderColor: '#00FF66', borderWidth: 4 },
@@ -431,7 +482,7 @@ const styles = StyleSheet.create({
   bottomLeft: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 },
   bottomRight: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 },
   instructionText: { color: 'white', marginTop: 20, fontSize: 14, fontWeight: '600', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 5 },
-  listContainer: { flex: 1, padding: 20, backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, elevation: 5, boxShadow: '0px -2px 4px rgba(0, 0, 0, 0.1)' },
+  listContainer: { flex: 1, padding: 20, backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, elevation: 5 },
   title: { fontSize: 16, fontWeight: 'bold', marginBottom: 5, color: '#333' },
   dateText: { fontSize: 14, color: '#666', marginBottom: 15, fontWeight: '500' },
   emptyText: { color: '#888', fontStyle: 'italic', textAlign: 'center', marginTop: 20 },
@@ -442,7 +493,7 @@ const styles = StyleSheet.create({
   editButton: { padding: 5, borderRadius: 5, marginRight: 10 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   fabContainer: { position: 'absolute', bottom: 55, right: 20, flexDirection: 'row', zIndex: 10 },
-  fab: { backgroundColor: '#217346', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 6, boxShadow: '0px 3px 4px rgba(0, 0, 0, 0.3)' },
+  fab: { backgroundColor: '#217346', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 6 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   formContainer: { width: 320, backgroundColor: 'white', borderWidth: 2, borderColor: '#ccc', borderRadius: 10, padding: 20, elevation: 5 },
   formTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
